@@ -1,0 +1,92 @@
+name: Booker API tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Test group to execute
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - smoke
+          - negative
+          - contract
+          - lifecycle
+          - framework
+          - known-defect
+
+permissions:
+  contents: read
+
+# Keep this public practice service at one active workflow per repository.
+concurrency:
+  group: booker-api-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUITE: ${{ inputs.suite || 'all' }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Run selected tests
+        id: tests
+        shell: bash
+        run: |
+          args=(-B --no-transfer-progress clean test)
+          case "$SUITE" in
+            all) ;;
+            known-defect) args+=("-Dgroups=known-defect" "-DexcludedGroups=") ;;
+            smoke|negative|contract|lifecycle|framework) args+=("-Dgroups=$SUITE") ;;
+            *) echo "Unsupported suite: $SUITE" >&2; exit 2 ;;
+          esac
+          ./mvnw "${args[@]}"
+
+      - name: Generate Allure HTML report
+        if: ${{ !cancelled() && hashFiles('target/allure-results/*-result.json') != '' }}
+        run: ./mvnw -B --no-transfer-progress allure:report
+
+      - name: Upload test evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: booker-${{ env.SUITE }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            target/surefire-reports/
+            target/allure-results/
+            target/site/allure-maven-plugin/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Write run summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          {
+            echo '## Booker API test run'
+            echo "- Suite: \`$SUITE\`"
+            echo "- Test step: **$TEST_OUTCOME**"
+            echo '- Download the artifact for Surefire results, Allure raw results, and generated HTML.'
+            echo '- Known-defect runs intentionally assert the desired contract and may fail while upstream defects remain.'
+          } >> "$GITHUB_STEP_SUMMARY"

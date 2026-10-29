@@ -1,0 +1,10 @@
+/target/
+/.allure/
+/allure-results/
+/allure-report/
+/.idea/
+/.vscode/
+*.iml
+.DS_Store
+.env
+*.log

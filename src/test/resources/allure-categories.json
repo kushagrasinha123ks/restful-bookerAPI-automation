@@ -1,0 +1,4 @@
+[
+  {"name":"Assertion failures","matchedStatuses":["failed"]},
+  {"name":"Transport or framework errors","matchedStatuses":["broken"]}
+]
